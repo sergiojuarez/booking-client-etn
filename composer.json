@@ -1,0 +1,25 @@
+{
+    "name": "rocketbus/booking-client-Etn",
+    "description": "Client library for Etn soap webserive",
+    "license": "MIT",
+    "minimum-stability": "stable",
+    "authors": [
+        {
+            "name": "Sergio Juarez",
+            "email": "sergio.juarez@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.4"
+
+    },
+    "require-dev":
+    {
+        "phpunit/phpunit": "4.1.3"
+    },
+    "autoload": {
+        "psr-0": {
+            "Etn": "src/"
+        }
+    }
+}
