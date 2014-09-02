@@ -15,7 +15,7 @@ class BusScheduleFactory {
         $busSchedule->setTipoItinerario((string)$xml->Tipo_itinerario);
         $busSchedule->setHoraCorrida((string)$xml->Hora_Corrida);
         $busSchedule->setTipoCorrida((string)$xml->Tipo_Corrida);
-        $busSchedule->setTipoCorrida((string)$xml->Empresa_Corrida);
+        $busSchedule->setEmpresaCorrida((string)$xml->Empresa_Corrida);
         $busSchedule->setServicio((string)$xml->Servicio);
         $busSchedule->setTarifa((float)$xml->Tarifa);
         $busSchedule->setDispEstudiantes((int)$xml->Disp_Estudiantes);

@@ -8,10 +8,12 @@ use Etn\Type\BusScheduleRequest;
 use Etn\Helper\BusSchedulerHelper;
 use Etn\Factory\BusScheduleFactory;
 use Etn\Type\BusSchedule;
+use Etn\Type\SeatRequest;
 
 
 class Client implements ServiceInterface
 {
+
 
     protected  $soapClient;
 
@@ -61,14 +63,13 @@ class Client implements ServiceInterface
           );
 
           $soapResponse = $this->soapClient->__soapCall($serviceType, $Params);
-
           $simpleXmlResponse = simplexml_load_string($soapResponse);
           $response = self::normalizeServices($simpleXmlResponse);
-
+/*
           if(!isset($soapResponse->out->Record)) {
-              return new BusSchedulesCollection();
+              return new BusSchedule();
           }
-
+*/        var_dump($response);
           return $response;
 
       }
@@ -87,36 +88,41 @@ class Client implements ServiceInterface
 
 
 
-
+    public function getSeatMap()
+    {
+        // TODO: Implement getSeatMap() method.
+    }
 
     /**
-     * @param AvailableSeatsRequest $request
+     * @param SeatRequest $seatrequest
      * @return array
      * @throws \Etn\Exceptions\SoapException
      */
-    public function getSeatMapDiagram(AvailableSeatsRequest $request)
+    public function getSeatMapDiagram(SeatRequest $seatRequest)
     {
         $serviceType = 'ConsultaDiagrama';
 
-        $departureDate = $request->getDepartureDate();
+        $departureDate = $seatRequest->getFechaCorrida();
         $formattedDepartureDate = $departureDate->format('dmY');
 
         $soapParams = array(
-            'E_aOficinaOrigen' => $request->getOrigin(),
-            'E_aOficineDestino' => $request->getDestination(),
-            'E_aFechaSalidaInicio' => $formattedDepartureDate,
-            'E_nClaveCorrida' => $request->getServiceNumber(),
-            'E_aEmpresaSolicita' => $request->getSolicitingCompany(),
-            'E_aEmpresaViaja' => $request->getServingCompany(),
-            'E_lVentaConexion' => $request->getConnection()
-
+            'E_aEmpresaSolicia' => $seatRequest->getEmpresaSolicita(),
+            'E_nClaveCorrida' => $seatRequest->getClaveCorrida(),
+            'E_aFechaCorrida' => $formattedDepartureDate,
+            'E_aEmpresaCorrida' => $seatRequest->getEmpresaCorrida()
         );
 
-        $soapResponse = $this->soapClient->{$serviceType}($soapParams);
+         var_dump($soapParams);
+        //$soapResponse = $this->soapClient->{$serviceType}($soapParams);
+        $soapResponse = $this->soapClient->__soapCall($serviceType, $soapParams);
 
-        $availableSeatsResponse = $this->normalizeAvailableSeatsMap(
-            $soapResponse->response
+        var_dump($soapResponse);
+
+        $availableSeatsResponse = $this->normalizeSeatsMap(
+            $soapResponse
         );
+
+        var_dump($availableSeatsResponse);
 
         if (
             isset($availableSeatsResponse['errorNumber']) &&
@@ -177,6 +183,58 @@ class Client implements ServiceInterface
             $services[] = $serviceResponse;
         }
         return $services;
+    }
+
+    protected static function normalizeSeatsMap($string)
+    {
+        $totalTokensPerFloor = 54;
+        $totalSeatsPerRow = 4;
+        $lastRowOnAFloor = 13;
+
+        list (
+            $mapString,
+            $numberOfRowsString
+           ) = explode('|', $string);
+
+         var_dump($numberOfRowsString);
+        var_dump("ZZZZ");
+        $numberOfRows = explode('|', $numberOfRowsString);
+
+        $removedSpaceAndCharacterString = preg_replace('/ [V|L]/', '', $mapString);
+        $allTokens = explode(',', $removedSpaceAndCharacterString);
+        $floorTokens = array_chunk($allTokens, $totalTokensPerFloor);
+        unset($floorTokens[2]);
+
+        foreach ($floorTokens as $floor => $tokens) {
+            foreach ($tokens as $position => $token) {
+
+                $seatNumber = intval(substr($token, 0, 3));
+                $row = intval($position / 4);
+                $column = $position % 4;
+
+                $isLastRowOnFloor = intval($position / $totalSeatsPerRow + 1) >=
+                    $lastRowOnAFloor;
+
+                $lastRowColumn = ($isLastRowOnFloor)?
+                    ($position - ($totalSeatsPerRow  * ($lastRowOnAFloor-1))) % 5:
+                    false;
+
+                $seats[$seatNumber] = array(
+                    'floor' => $floor,
+                    'x' => ($isLastRowOnFloor)? $lastRowOnAFloor : $row,
+                    'y' => ($isLastRowOnFloor)? $lastRowColumn : $column,
+                );
+
+            }
+        }
+        unset($seats[0]);
+        $availableSeatsMap = array(
+            'seats' => $seats,
+            'numberOfRows' => $numberOfRows,
+
+        );
+
+        return $availableSeatsMap;
     }
 
 
