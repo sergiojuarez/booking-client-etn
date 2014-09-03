@@ -4,28 +4,35 @@
 namespace Etn\Service;
 
 use Etn\Exceptions\SoapException;
+use Etn\Exceptions\ResponseException;
 use Etn\Type\BusScheduleRequest;
 use Etn\Helper\BusSchedulerHelper;
+use Etn\Helper\SeatHelper;
 use Etn\Factory\BusScheduleFactory;
 use Etn\Type\BusSchedule;
 use Etn\Type\SeatRequest;
+use Etn\Type\Seat;
+use Etn\Factory\SeatFactory;
+use Etn\Type\SeatReservationRequest;
+use Etn\Type\ConfirmTicketRequest;
+use Etn\Type\LogEntryEtn;
+use Rocket\Bus\Mexico\SharedBundle\BookingEngines\Type\LogEntry;
 
 
 class Client implements ServiceInterface
 {
 
 
-    protected  $soapClient;
-
-
+    protected $soapClient;
+    protected $logEntry;
     const DEFAULT_SERVICE_CLASS = 0;
     const DEFAULT_ADULT_COUNT = 1;
-
     const START_HOUR = "000000";
     const FINISH_HOUR = "235959";
     const CORRIDA_NOT_FOUND_ERROR = 'No Existe la Corrida Solicitada.';
     const ERROR_FOUND = "E";
     const NO_ERRORS_FOUND = "00";
+    const NO_ERRORS_FOUND_MESSAGE = "Sin Error";
     const NOT_A_VALID_SEAT = "000";
     const LINES_PER_ROW = 4;
 
@@ -69,7 +76,7 @@ class Client implements ServiceInterface
           if(!isset($soapResponse->out->Record)) {
               return new BusSchedule();
           }
-*/        var_dump($response);
+*/       // var_dump($response);
           return $response;
 
       }
@@ -88,18 +95,15 @@ class Client implements ServiceInterface
 
 
 
-    public function getSeatMap()
-    {
-        // TODO: Implement getSeatMap() method.
-    }
 
     /**
      * @param SeatRequest $seatrequest
      * @return array
      * @throws \Etn\Exceptions\SoapException
      */
-    public function getSeatMapDiagram(SeatRequest $seatRequest)
+    public function getSeatMapDiagram(SeatRequest $seatRequest, SeatHelper $seatHelper)
     {
+        try{
         $serviceType = 'ConsultaDiagrama';
 
         $departureDate = $seatRequest->getFechaCorrida();
@@ -112,23 +116,50 @@ class Client implements ServiceInterface
             'E_aEmpresaCorrida' => $seatRequest->getEmpresaCorrida()
         );
 
-         var_dump($soapParams);
-        //$soapResponse = $this->soapClient->{$serviceType}($soapParams);
+
         $soapResponse = $this->soapClient->__soapCall($serviceType, $soapParams);
 
-        var_dump($soapResponse);
+         $availableSeatsResponse =  $seatHelper->normalizeSeatsMap($soapResponse);
 
-        $availableSeatsResponse = $this->normalizeSeatsMap(
-            $soapResponse
+        if ( $availableSeatsResponse['errorMessage'] !== "") {
+            throw new ResponseException(
+                'There was a communication error with the Bus Line'
+            );
+        }
+         // var_dump($availableSeatsResponse);
+        return $availableSeatsResponse;
+        }
+        catch(\Exception $e){
+            $e->getMessage();
+        }
+    }
+    /**
+     * @param SeatRequest $seatRequest
+     * @return array
+     * @throws \Etn\Exceptions\ResponseException;
+     */
+    public function getAvailableSeats(SeatRequest $seatRequest, SeatHelper $seatHelper)
+    {
+        $serviceType = 'ConsultaOcupacion';
+
+        $departureDate = $seatRequest->getFechaCorrida();
+        $formattedDepartureDate = $departureDate->format('dmY');
+
+        $soapParams = array(
+            'p_cve_origen_1' => $seatRequest->getClaveOrigen(),
+            'p_cve_destino_2' => $seatRequest->getClaveDestino(),
+            'p_fecha_3' => $formattedDepartureDate,
+            'p_cve_corrida_4' => $seatRequest->getClaveCorrida(),
+            'p_cve_empresa_5' => $seatRequest->getEmpresaSolicita(),
+            'p_cve_empresa_corrida_6' => $seatRequest->getEmpresaCorrida(),
         );
 
-        var_dump($availableSeatsResponse);
+        $soapResponse = $this->soapClient->_soapCall($serviceType, $soapParams);
 
-        if (
-            isset($availableSeatsResponse['errorNumber']) &&
-            ($availableSeatsResponse['errorNumber'] != 0)
-        ) {
-            throw new SoapException(
+
+        $availableSeatsResponse = $seatHelper->normalizeAvailableSeats($soapResponse);
+        if ($availableSeatsResponse['errorMessage'] !== NULL) {
+            throw new ResponseException(
                 'There was a communication error with the Bus Line'
             );
         }
@@ -136,36 +167,197 @@ class Client implements ServiceInterface
         return $availableSeatsResponse;
     }
 
-    public function reservationSeat()
-    {
-        // TODO: Implement reservationSeat() method.
+
+    /**
+     * @param SeatRequest $seatRequest
+     */
+    public function getSeatMap(SeatRequest $seatRequest) {
+        $seatHelper = new SeatHelper();
+        $availableSeats = $this->getAvailableSeats($seatRequest, $seatHelper);
+        $availableSeatsMap = $this->getSeatMapDiagram($seatRequest, $seatHelper);
+
+        $seatsAvailable = $availableSeats['availability'];
+        $seatsMap = $availableSeatsMap['seats'];
+        $seats = $seatHelper->mergeAvailableSeatsWithMap($seatsAvailable, $seatsMap);
+
+        return $seats;
     }
 
-    public function cancelReservationSeat()
+    public function reservationSeat(SeatReservationRequest $seatReservationRequest)
     {
-        // TODO: Implement cancelReservationSeat() method.
+
+        try{
+            $serviceType = 'PeticionReservacionP';
+
+            $departureDate = $seatReservationRequest->getFechaCorrida();
+            $formattedDepartureDate = $departureDate->format('dmY');
+
+            $soapParams = array(
+                'p_cve_origen_1' => $seatReservationRequest->getClaveOrigen(),
+                'p_cve_destino_2' => $seatReservationRequest->getClaveDestino(),
+                'p_fecha_3' => $formattedDepartureDate,
+                'p_hora_4' => $seatReservationRequest->getHora(),
+                'p_no_adulto_5' => $seatReservationRequest->getNumAdulto(),
+                'p_no_nino_6' => $seatReservationRequest->getNumNino(),
+                'p_no_insen_7' => $seatReservationRequest->getNumInsen(),
+                'p_no_estudiante_8' => $seatReservationRequest->getNumEstudiante(),
+                'p_no_maestro_9' => $seatReservationRequest->getNumMaestro(),
+                'p_corrida_10' => $seatReservationRequest->getNumCorrida(),
+                'p_asientos_11' => $seatReservationRequest->getAsientos(),
+                'p_nombres_12' => $seatReservationRequest->getNombre(),
+                'p_folio_reservacion_13' => $seatReservationRequest->getFolioReservacion(),
+                'E_aClaveEmpresaSolicita' => $seatReservationRequest->getCveEmpresaSolicita(),
+                'E_aClaveEmpresaViaja' => $seatReservationRequest->getCveEmpresaViaje(),
+                'P_no_promocion'=> $seatReservationRequest->getNumPromocion(),
+                'P_aCadenaPromociones' => $seatReservationRequest->getCadenaPromocion(),
+                'E_aTipoTerminal' => $seatReservationRequest->getTipoTerminal(),
+                'E_aTipoCliente' => $seatReservationRequest->getTipoCliente(),
+                'E_aTipoOperacion' => $seatReservationRequest->getTipoOperacion(),
+                'E_nEsIntercambio' => $seatReservationRequest->getEsIntercambio(),
+                'E_nClaveOperacionOriginal' => $seatReservationRequest->getClaveOperacionOriginal(),
+                'E_nConsecutivoOperacionOrigina' => $seatReservationRequest->getConsecutivoOperOriginal(),
+                'E_no_ProgramaPaisano' => $seatReservationRequest->getNumProgPaisano(),
+                'E_EsBoletoFrontera' => $seatReservationRequest->getEsBoletoFrontera(),
+                'E_aDatosBoletoFrontera' => $seatReservationRequest->getDatosBoletosFrontera()
+            );
+
+
+            $soapResponse = $this->soapClient->__soapCall($serviceType, $soapParams);
+
+            $reservationResponse = explode("|", $soapResponse);
+
+            if (self::isSeatReservationSuccessful($reservationResponse)) {
+                $seatReservationRequest->setFolioReservacion($reservationResponse[0]);
+                return $reservationResponse;
+            }
+            else {
+                throw new ResponseException(
+                    'There was an Error during seat reservation'
+                );
+            }
+
+        }
+        catch(\Exception $e){
+            $e->getMessage();
+        }
     }
 
-    public function buyTicket()
+    /**
+     * @param array $reservationResponse
+     * @return bool
+     */
+    protected static function isSeatReservationSuccessful($reservationResponse)
     {
-        // TODO: Implement buyTicket() method.
+        return (isset($reservationResponse[3]) && $reservationResponse[3] == self::NO_ERRORS_FOUND_MESSAGE);
     }
 
-    public function cancelTicket()
+    public function cancelReservationSeat(SeatReservationRequest $seatReservationRequest)
     {
-        // TODO: Implement cancelTicket() method.
+        try {
+            $serviceType = 'PeticionLiberaReservacion';
+
+            $params = [
+                "p_folio_reservacion_1" => $seatReservationRequest->getFolioReservacion(),
+                "p_cve_empresa_2" => $seatReservationRequest->getCveEmpresaSolicita(),
+                "p_cve_empresa_corrida_3" => $seatReservationRequest->getCveEmpresaViaje()
+            ];
+
+            $soapResponse = $this->soapClient->__soapCall($serviceType, $params);
+            return $soapResponse;
+        }
+        catch (\Exception $e){
+            $e->getMessage();
+        }
+    }
+
+    public function buyTicket(ConfirmTicketRequest $confirmTicketRequest)
+    {
+        try {
+            $serviceType = 'PeticionConfirmacion';
+
+            $departureDate = $confirmTicketRequest->getFechaCorrida();
+            $formattedDepartureDate = $departureDate->format('dmY');
+
+            $params = array(
+                "p_cve_origen_1" => $confirmTicketRequest->getCveOrigen(),
+                "p_corrida_2" => $confirmTicketRequest->getCveCorrida(),
+                "p_fecha_3" => $formattedDepartureDate,
+                "p_folio_reservacion_4" => $confirmTicketRequest->getFolioReservacion(),
+                "p_cve_empresa_5" => $confirmTicketRequest->getCveEmpresaSolicita(),
+                "p_cve_empresa_viaja_6" => $confirmTicketRequest->getCveEmpresaViaje(),
+                "E_nClaveSucursalExterna" => $confirmTicketRequest->getCveSucursalExterna(),
+                "E_aClaveOficinaExterna" => $confirmTicketRequest->getCveOficinaExterna(),
+                "E_fFechaContableExterna" => $confirmTicketRequest->getFechaContableExterna(),
+                "E_aFormaPagoExterna" => $confirmTicketRequest->getFormaPagoExterna(),
+                "E_bFormasPagoTemp" => $confirmTicketRequest->getFormaPagoTemp(),
+                "E_nSesionBol" => $confirmTicketRequest->getSesion()
+            );
+           // var_dump($params);
+            $soapResponse = $this->soapClient->__soapCall($serviceType, $params);
+
+            $lastRequest = $this->soapClient->__getLastRequest();
+            $lastRequestDateTime = new \DateTime();
+            $lastResponseDateTime = new \DateTime();
+
+            $logEntryEtn = new LogEntryEtn();
+            $logEntryEtn->setLastRequest($lastRequest);
+            $logEntryEtn->setLastResponse($soapResponse);
+            $logEntryEtn->setLastRequestDateTime($lastRequestDateTime);
+            $logEntryEtn->setLastResponseDateTime($lastResponseDateTime);
+
+           // $this->setCommunicationLog($logEntryEtn);
+
+            return $soapResponse;
+        }
+        catch (\Exception $e) {
+            $e->getMessage();
+        }
+
+    }
+
+    public function cancelTicket(ConfirmTicketRequest $confirmTicketRequest)
+    {
+        try {
+
+            $serviceType = 'PeticionLiberaReservacion';
+
+               $params = array(
+                "p_folio_reservacion_1" => $confirmTicketRequest->getFolioReservacion(),
+                "p_cve_empresa_2" => $confirmTicketRequest->getCveEmpresaSolicita(),
+                "p_cve_empresa_corrida_3" => $confirmTicketRequest->getCveEmpresaViaje()
+
+               );
+
+            var_dump($params);
+
+            $soapResponse = $this->soapClient->__soapCall($serviceType, $params);
+
+            $lastRequest = $this->soapClient->__getLastRequest();
+            $lastRequestDateTime = new \DateTime();
+            $lastResponseDateTime = new \DateTime();
+
+            $logEntryEtn = new LogEntryEtn();
+            $logEntryEtn->setLastRequest($lastRequest);
+            $logEntryEtn->setLastResponse($soapResponse);
+            $logEntryEtn->setLastRequestDateTime($lastRequestDateTime);
+            $logEntryEtn->setLastResponseDateTime($lastResponseDateTime);
+
+            //$this->setCommunicationLog($logEntryEtn);
+
+            return $soapResponse;
+
+        }
+        catch (\Exception $e) {
+            $e->getMessage();
+        }
     }
 
     protected function callSoapServiceByType($type, $params)
     {
         $options = array('trace' => 1, 'exception' => 1);
 
-        var_dump($params);
         $response = $this->soapClient->__soapCall($type, $params, array('trace' => $options));
 
-        var_dump("aqui");
-        //var_dump($this->soapCli->_getLastRequest());
-         var_dump($response);
         return $response;
     }
 
@@ -185,56 +377,20 @@ class Client implements ServiceInterface
         return $services;
     }
 
-    protected static function normalizeSeatsMap($string)
+    public function setCommunicationLog(LogEntryEtn $logEntryEtn)
     {
-        $totalTokensPerFloor = 54;
-        $totalSeatsPerRow = 4;
-        $lastRowOnAFloor = 13;
+        $this->logEntry = new LogEntry();
+        $this->logEntry->setRequestBody($logEntryEtn->getLastRequest());
+        $this->logEntry->setResponseBody($logEntryEtn->getLastResponse());
+        $this->logEntry->setRequestDateTime($logEntryEtn->getLastRequestDateTime());
+        $this->logEntry->setResponseDateTime($logEntryEtn->getLastResponseDateTime());
 
-        list (
-            $mapString,
-            $numberOfRowsString
-           ) = explode('|', $string);
+        return $this;
+    }
 
-         var_dump($numberOfRowsString);
-        var_dump("ZZZZ");
-        $numberOfRows = explode('|', $numberOfRowsString);
-
-        $removedSpaceAndCharacterString = preg_replace('/ [V|L]/', '', $mapString);
-        $allTokens = explode(',', $removedSpaceAndCharacterString);
-        $floorTokens = array_chunk($allTokens, $totalTokensPerFloor);
-        unset($floorTokens[2]);
-
-        foreach ($floorTokens as $floor => $tokens) {
-            foreach ($tokens as $position => $token) {
-
-                $seatNumber = intval(substr($token, 0, 3));
-                $row = intval($position / 4);
-                $column = $position % 4;
-
-                $isLastRowOnFloor = intval($position / $totalSeatsPerRow + 1) >=
-                    $lastRowOnAFloor;
-
-                $lastRowColumn = ($isLastRowOnFloor)?
-                    ($position - ($totalSeatsPerRow  * ($lastRowOnAFloor-1))) % 5:
-                    false;
-
-                $seats[$seatNumber] = array(
-                    'floor' => $floor,
-                    'x' => ($isLastRowOnFloor)? $lastRowOnAFloor : $row,
-                    'y' => ($isLastRowOnFloor)? $lastRowColumn : $column,
-                );
-
-            }
-        }
-        unset($seats[0]);
-        $availableSeatsMap = array(
-            'seats' => $seats,
-            'numberOfRows' => $numberOfRows,
-
-        );
-
-        return $availableSeatsMap;
+    public function getCommunicationLog()
+    {
+        return $this->logEntry;
     }
 
 

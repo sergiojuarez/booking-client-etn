@@ -14,7 +14,8 @@ use Etn\Type\BusScheduleRequest;
 /**
  * @Service
  */
-class BusSchedulerHelper {
+class BusSchedulerHelper
+{
     function __construct()
     {
     }

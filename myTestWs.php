@@ -5,6 +5,9 @@ require_once 'vendor/autoload.php';
 use Etn\Type\BusSchedule;
 use Etn\Type\BusScheduleRequest;
 use Etn\Type\SeatRequest;
+use Etn\Helper\SeatHelper;
+use Etn\Type\SeatReservationRequest;
+use Etn\Type\ConfirmTicketRequest;
 
 
 
@@ -38,11 +41,11 @@ $requestRuns->setNoProgramaPaisano(0);
 $requestRuns->setHoraFin("235959");
 
 
-//$type='ConsultaCorridas';
-//$response = $sClient->ConsultaCorridas($params);
-//$response = $sClient->__soapCall($type, $params);
 
-//$runs = $client->getBusSchedules($requestRuns);
+//$response = $sClient->ConsultaCorridas($params);
+
+
+$runs = $client->getBusSchedules($requestRuns);
 
 //$result = simplexml_load_string($runs);
 //var_dump($runs);
@@ -53,12 +56,6 @@ $requestRuns->setHoraFin("235959");
 
 echo '-----------------------------------getRuns'."\n";
 
-/*$soapParams =[
-    'E_aEmpresaSolicia' =>"CBUS",
-    'E_nClaveCorrida' => 176,
-    'E_aFechaCorrida' => "02092014",
-    'E_aEmpresaCorrida' => "TLU"
-];*/
 
 
 
@@ -69,9 +66,96 @@ $seatRequest->setEmpresaSolicita("CBUS");
 $seatRequest->setClaveCorrida(176);
 $seatRequest->setFechaCorrida($tomorrow);
 $seatRequest->setEmpresaCorrida("TLU");
+$seatRequest->setClaveOrigen("GDLJ");
+$seatRequest->setClaveDestino("MEXN");
+$seatHelper = new SeatHelper();
 
 //var_dump($soapParams);
-$seatDiagram = $client->getSeatMapDiagram($seatRequest);
+$seatDiagram = $client->getSeatMapDiagram($seatRequest,$seatHelper);
 //$response = $sClient->ConsultaDiagrama($soapParams);
-//var_dump($response);
+//var_dump($seatDiagram);
 echo 'Last request: '. $sClient->__getLastRequest();
+
+$seatAvailable = $client->getAvailableSeats($seatRequest,$seatHelper);
+
+//echo 'Last request: '. $sClient->__getLastRequest();
+
+$mySeat = $client->getSeatMap($seatRequest);
+
+//var_dump($mySeat);
+
+//echo 'Last request: '. $sClient->__getLastRequest();
+
+$seatReservationRequest = new SeatReservationRequest();
+
+$seatReservationRequest->setClaveOrigen($seatRequest->getClaveOrigen());
+$seatReservationRequest->setClaveDestino($seatRequest->getClaveDestino());
+$seatReservationRequest->setFechaCorrida($seatRequest->getFechaCorrida());
+$seatReservationRequest->setHora("");
+$seatReservationRequest->setNumAdulto(1);
+$seatReservationRequest->setNumNino(0);
+$seatReservationRequest->setNumInsen(0);
+$seatReservationRequest->setNumEstudiante(0);
+$seatReservationRequest->setNumMaestro(0);
+$seatReservationRequest->setNumCorrida(191);
+$seatReservationRequest->setAsientos(27);
+$seatReservationRequest->setNombre("LUIS PEREZ GARCIA                 ");
+$seatReservationRequest->setFolioReservacion(0);
+$seatReservationRequest->setCveEmpresaSolicita($seatRequest->getEmpresaSolicita());
+$seatReservationRequest->setCveEmpresaViaje($seatRequest->getEmpresaCorrida());
+$seatReservationRequest->setNumPromocion(0);
+$seatReservationRequest->setCadenaPromocion("");
+$seatReservationRequest->setTipoTerminal("I");
+$seatReservationRequest->setTipoCliente("A");
+$seatReservationRequest->setTipoOperacion("R");
+$seatReservationRequest->setEsIntercambio(0);
+$seatReservationRequest->setClaveOperacionOriginal("");
+$seatReservationRequest->setConsecutivoOperOriginal("");
+$seatReservationRequest->setNumProgPaisano(0);
+$seatReservationRequest->setEsBoletoFrontera("");
+$seatReservationRequest->setDatosBoletosFrontera("");
+
+$myReservation = $client->reservationSeat($seatReservationRequest);
+
+var_dump("--------********".$seatReservationRequest->getFolioReservacion());
+
+//$myCancelTicket = $client->cancelReservationSeat($seatReservationRequest);
+
+//var_dump($myCancelTicket);
+
+$confirmTicketrequest = new ConfirmTicketRequest();
+
+$confirmTicketrequest->setCveOrigen($seatReservationRequest->getClaveOrigen());
+$confirmTicketrequest->setCveCorrida($seatReservationRequest->getNumCorrida());
+$confirmTicketrequest->setFechaCorrida($seatReservationRequest->getFechaCorrida());
+$confirmTicketrequest->setFolioReservacion($seatReservationRequest->getFolioReservacion());
+$confirmTicketrequest->setCveEmpresaSolicita($seatReservationRequest->getCveEmpresaSolicita());
+$confirmTicketrequest->setCveEmpresaViaje($seatReservationRequest->getCveEmpresaViaje());
+$confirmTicketrequest->setCveSucursalExterna("");
+$confirmTicketrequest->setCveOficinaExterna("");
+$confirmTicketrequest->setFechaContableExterna("");
+$confirmTicketrequest->setFormaPagoExterna("");
+$confirmTicketrequest->setFormaPagoTemp("");
+$confirmTicketrequest->setSesion("");
+
+$myConfirmTicket = $client->buyTicket($confirmTicketrequest);
+
+var_dump($myConfirmTicket);
+
+var_dump("------------------------------");
+
+var_dump("---------------*********".$confirmTicketrequest->getFolioReservacion());
+
+
+
+$myCancelTicketrequest = $client->cancelTicket($confirmTicketrequest);
+
+var_dump($myConfirmTicket);
+
+
+
+
+
+
+
+
