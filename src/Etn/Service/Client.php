@@ -3,7 +3,7 @@
 
 namespace Etn\Service;
 
-use Etn\Exceptions\SoapException;
+
 use Etn\Exceptions\ResponseException;
 use Etn\Type\BusScheduleRequest;
 use Etn\Helper\BusSchedulerHelper;
@@ -16,6 +16,7 @@ use Etn\Factory\SeatFactory;
 use Etn\Type\SeatReservationRequest;
 use Etn\Type\ConfirmTicketRequest;
 use Etn\Type\LogEntryEtn;
+use Etn\Type\OriginDestinationRequest;
 use Rocket\Bus\Mexico\SharedBundle\BookingEngines\Type\LogEntry;
 
 
@@ -35,6 +36,7 @@ class Client implements ServiceInterface
     const NO_ERRORS_FOUND_MESSAGE = "Sin Error";
     const NOT_A_VALID_SEAT = "000";
     const LINES_PER_ROW = 4;
+    const TOKEN ="CBUS";
 
 
 
@@ -45,14 +47,54 @@ class Client implements ServiceInterface
 
     }
 
-    public function fetchPlaceMappings()
+    public function fetchPlaceMappings(OriginDestinationRequest $originDestinationRequest)
     {
-        // TODO: Implement fetchPlaceMappings() method.
+      try {
+          $serviceType="getOficinas";
+          $params = [
+              "E_aClaveEmpresaSolicita" => $originDestinationRequest->getEmpresaSolicita()
+          ];
+
+          $soapResponse = $this->soapClient->__soapCall($serviceType, $params);
+
+      }
+      catch(\Exception $e){
+          if ($e->getMessage() == "looks like we got no XML document") {
+              $lastResponse = $this->soapClient->__getLastResponse();
+              $translatedResponse = iconv('ISO-8859-1', 'ascii//TRANSLIT', $lastResponse);
+              preg_match('/(.*)\<Return xsi:type="xsd:string"\>(.*)\<\/S\_aOficinas\>/',
+                  $translatedResponse, $response);
+
+              return $response[2];
+
+          }
+      }
     }
 
-    public function fetchRoutes()
+    public function fetchRoutes(OriginDestinationRequest $originDestinationRequest)
     {
-        // TODO: Implement fetchRoutes() method.
+       try {
+           $serviceType="Destinos";
+
+           $params = array(
+               "E_aClaveOficinaOrigen" => $originDestinationRequest->getOrigen(),
+               "E_aEmpresasolicita" => $originDestinationRequest->getEmpresaSolicita(),
+               "E_aEmpresaViaja" => $originDestinationRequest->getEmpresaViaja()
+
+           );
+
+           $soapResponse = $this->soapClient->__soapCall($serviceType,$params);
+
+           if (trim($soapResponse)===""){
+               throw new ResponseException ("Destination not found!");
+           }
+           return $soapResponse;
+
+       }
+       catch(\Exception $e){
+
+
+       }
     }
 
     public function getBusSchedules(BusScheduleRequest $busScheduleRequest)

@@ -6,13 +6,14 @@ use  Etn\Type\BusScheduleRequest;
 use  Etn\Type\SeatRequest;
 use  Etn\Type\SeatReservationRequest;
 use  Etn\Type\ConfirmTicketRequest;
+use  Etn\Type\OriginDestinationRequest;
 
 
 interface ServiceInterface
 {
 
-    public function fetchPlaceMappings();
-    public function fetchRoutes();
+    public function fetchPlaceMappings(OriginDestinationRequest $originDestinationRequest);
+    public function fetchRoutes(OriginDestinationRequest $originDestinationRequest);
     public function getBusSchedules(BusScheduleRequest $busScheduleRequest);
     public function getStops();
     public function getSeatMap(SeatRequest $seatRequest);
